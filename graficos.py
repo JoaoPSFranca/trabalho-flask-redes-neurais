@@ -24,6 +24,7 @@ CORES_CURVAS = [
     "#8C564B",
     "#E377C2",
     "#17BECF",
+    "#34495E",
 ]
 
 
@@ -114,7 +115,7 @@ def grafico_evolucao_parametros(resultado: ResultadoTreino) -> str:
     biases = [r["bias"] for r in hist]
     matriz_pesos = np.array([r["pesos"] for r in hist])  # (E+1, d)
 
-    max_curvas = min(8, matriz_pesos.shape[1])
+    max_curvas = min(9, matriz_pesos.shape[1])
     fig, ax = plt.subplots(figsize=(10.5, 4.3))
     marcador = "o" if len(epocas) <= 18 else None
 
@@ -315,6 +316,103 @@ def grafico_mapa_pesos(mapas_pesos: dict[str, Any] | None) -> str | None:
     return _fig_para_base64(fig)
 
 
+def grafico_filtros_cnn(filtros_cnn: dict[str, Any] | None) -> str | None:
+    """Visualiza todos os kernels da CNN antes (época 0), depois e sua variação (Δ)."""
+    if not filtros_cnn:
+        return None
+
+    k_ini = np.asarray(filtros_cnn["kernels_iniciais"], dtype=float)
+    k_fim = np.asarray(filtros_cnn["kernels_finais"], dtype=float)
+    k_del = k_fim - k_ini
+    n_filtros, kh, kw = k_ini.shape
+
+    vlim = max(float(np.max(np.abs(k_ini))), float(np.max(np.abs(k_fim))), 1e-6)
+    vlim_d = max(float(np.max(np.abs(k_del))), 1e-6)
+
+    fig, axes = plt.subplots(3, n_filtros, figsize=(max(6.5, 1.85 * n_filtros), 6.1))
+    if n_filtros == 1:
+        axes = axes.reshape(3, 1)
+
+    linhas_info = [
+        ("Inicial\n(Época 0)", k_ini, vlim, "RdBu_r"),
+        ("Final\n(Treinado)", k_fim, vlim, "RdBu_r"),
+        ("Variação\n(Δ)", k_del, vlim_d, "PiYG"),
+    ]
+
+    anotar = kh <= 5 and kw <= 5 and n_filtros <= 12
+    for row_idx, (rotulo_linha, bloco, lim_cur, cmap) in enumerate(linhas_info):
+        for col_idx in range(n_filtros):
+            ax = axes[row_idx, col_idx]
+            mat = bloco[col_idx]
+            ax.imshow(mat, cmap=cmap, vmin=-lim_cur, vmax=lim_cur, interpolation="nearest")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row_idx == 0:
+                ax.set_title(f"Filtro {col_idx + 1}", fontsize=9.5, fontweight="bold", color="#1F3864")
+            if col_idx == 0:
+                ax.set_ylabel(rotulo_linha, fontsize=9, fontweight="bold", color="#1F3864")
+            if anotar:
+                for r in range(kh):
+                    for c in range(kw):
+                        ax.text(
+                            c,
+                            r,
+                            f"{mat[r, c]:+.2f}",
+                            ha="center",
+                            va="center",
+                            fontsize=6.6 if n_filtros > 8 else 7.4,
+                            color="white" if abs(mat[r, c]) > 0.58 * lim_cur else "#111827",
+                        )
+
+    fig.suptitle(
+        "Filtros (kernels) da CNN — Antes vs Depois do Treinamento e Variação (Δ)",
+        fontsize=11.5,
+        fontweight="bold",
+        color="#1F3864",
+        y=1.02,
+    )
+    fig.tight_layout()
+    return _fig_para_base64(fig)
+
+
+def grafico_mapas_ativacao_cnn(filtros_cnn: dict[str, Any] | None) -> str | None:
+    """Mostra uma imagem real do teste e os mapas de características após a convolução treinada."""
+    if not filtros_cnn or "mapas_ativacao" not in filtros_cnn:
+        return None
+
+    img = np.asarray(filtros_cnn["amostra_imagem"], dtype=float)
+    mapas = np.asarray(filtros_cnn["mapas_ativacao"], dtype=float)
+    n_mostrar = min(len(mapas), 8)
+
+    fig, axes = plt.subplots(1, n_mostrar + 1, figsize=(max(7.5, 1.65 * (n_mostrar + 1)), 2.5))
+    axes[0].imshow(img, cmap="gray", vmin=0.0, vmax=1.0, interpolation="nearest")
+    axes[0].set_title(
+        f"Teste\nReal: {filtros_cnn['amostra_real']} | Prev: {filtros_cnn['amostra_prevista']}",
+        fontsize=8.5,
+        fontweight="bold",
+        color="#1F3864",
+    )
+    axes[0].set_xticks([])
+    axes[0].set_yticks([])
+
+    for i in range(n_mostrar):
+        ax = axes[i + 1]
+        ax.imshow(mapas[i], cmap="viridis", interpolation="nearest")
+        ax.set_title(f"Mapa F{i + 1}", fontsize=8.8, color="#334155")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    fig.suptitle(
+        "Exemplo de resposta dos filtros treinados (mapas de características após ativação)",
+        fontsize=10.5,
+        fontweight="bold",
+        color="#1F3864",
+        y=1.05,
+    )
+    fig.tight_layout()
+    return _fig_para_base64(fig)
+
+
 def montar_todos_graficos(dados: ConjuntoDados, resultado: ResultadoTreino) -> dict[str, str | None]:
     """Gera todos os gráficos pertinentes ao modelo treinado."""
     return {
@@ -324,4 +422,6 @@ def montar_todos_graficos(dados: ConjuntoDados, resultado: ResultadoTreino) -> d
         "norma_camadas": grafico_norma_camadas(resultado),
         "fronteira_perceptron": grafico_fronteira_perceptron(dados, resultado),
         "mapa_pesos": grafico_mapa_pesos(resultado.mapas_pesos),
+        "filtros_cnn": grafico_filtros_cnn(resultado.filtros_cnn),
+        "mapas_ativacao_cnn": grafico_mapas_ativacao_cnn(resultado.filtros_cnn),
     }

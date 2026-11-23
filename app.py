@@ -64,6 +64,8 @@ def _estado_inicial_formulario() -> dict[str, Any]:
         "attr_y": "1",
         "n_camadas_ocultas": "2",
         "neuronios_ocultos": "16, 8",
+        "num_filtros": "8",
+        "tamanho_kernel": "3",
         "csv_token": "",
         "csv_nome": "",
     }
@@ -130,6 +132,12 @@ def index():
             n_camadas_ocultas = _converter_int(
                 form_state.get("n_camadas_ocultas", "2"), "Camadas ocultas do MLP"
             )
+            num_filtros = _converter_int(
+                form_state.get("num_filtros", "8"), "Número de filtros da CNN"
+            )
+            tamanho_kernel = _converter_int(
+                form_state.get("tamanho_kernel", "3"), "Tamanho do kernel da CNN"
+            )
 
             dados = carregar_e_preparar_dados(
                 chave_base=form_state["base"],
@@ -149,6 +157,8 @@ def index():
                 "attr_y": attr_y,
                 "n_camadas_ocultas": n_camadas_ocultas,
                 "neuronios_ocultos": form_state.get("neuronios_ocultos", "16, 8"),
+                "num_filtros": num_filtros,
+                "tamanho_kernel": tamanho_kernel,
             }
             resultado = executar_treinamento(dados, config)
             graficos = montar_todos_graficos(dados, resultado)

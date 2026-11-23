@@ -443,7 +443,7 @@
                 MLP — Perceptron Multicamadas (PyTorch)
               </option>
               <option value="cnn" {% if form_state.modelo == 'cnn' %}selected{% endif %}>
-                CNN — Rede Convolucional (Etapa 3)
+                CNN — Rede Convolucional (PyTorch)
               </option>
             </select>
             <span class="dica" id="dica-modelo"></span>
@@ -483,7 +483,7 @@
 
           <div class="campo">
             <label for="epocas">Épocas</label>
-            <input id="epocas" name="epocas" type="number" step="1" min="1" max="200" value="{{ form_state.epocas }}" required />
+            <input id="epocas" name="epocas" type="number" step="1" min="1" value="{{ form_state.epocas }}" required />
             <span class="dica" id="dica-epocas">Máximo recomendado: 200 (Perceptron/MLP) ou 30 (CNN).</span>
           </div>
 
@@ -541,6 +541,21 @@
               <label for="neuronios_ocultos">Neurônios por camada oculta</label>
               <input id="neuronios_ocultos" name="neuronios_ocultos" type="text" value="{{ form_state.neuronios_ocultos }}" placeholder="Ex.: 16 ou 16, 8" />
               <span class="dica">Informe 1 número (igual para todas) ou valores separados por vírgula (ex.: 16, 8).</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="bloco-cnn" class="secao-config-extra {% if form_state.modelo != 'cnn' %}oculto{% endif %}">
+          <h4>Camada Convolucional da CNN (RF4)</h4>
+          <div class="form-grid">
+            <div class="campo">
+              <label for="num_filtros">Número de filtros (1 a 32)</label>
+              <input id="num_filtros" name="num_filtros" type="number" step="1" min="1" max="32" value="{{ form_state.num_filtros }}" />
+            </div>
+            <div class="campo">
+              <label for="tamanho_kernel">Tamanho do kernel (k×k)</label>
+              <input id="tamanho_kernel" name="tamanho_kernel" type="number" step="1" min="2" max="7" value="{{ form_state.tamanho_kernel }}" />
+              <span class="dica">Recomendado: 3 (para 3×3) ou 5 (para 5×5) em imagens 8×8 ou 28×28.</span>
             </div>
           </div>
         </div>
@@ -639,7 +654,7 @@
             <tr>
               <th>Época</th>
               <th>bias</th>
-              {% for nome_w in resultado.nomes_pesos_foco[:8] %}
+              {% for nome_w in resultado.nomes_pesos_foco[:9] %}
               <th title="{{ nome_w }}">w{{ loop.index }} ({{ nome_w[:16] }}{% if nome_w|length > 16 %}…{% endif %})</th>
               {% endfor %}
             </tr>
@@ -715,9 +730,22 @@
       <img class="img-grafico" src="data:image/png;base64,{{ graficos.norma_camadas }}" alt="Norma da variação dos pesos por camada por época" />
     </section>
 
+    {% if graficos.filtros_cnn %}
+    <section class="card">
+      <h2>6. Visualização dos Filtros da CNN — Antes e Depois (RF11)</h2>
+      <p class="dica" style="margin-top: 0; margin-bottom: 0.85rem;">
+        Comparação visual de todos os kernels aprendidos na camada convolucional (Época 0 vs Final e Δ) e exemplos de mapas de características gerados em uma imagem real de teste.
+      </p>
+      <img class="img-grafico" style="margin-bottom: 1.1rem;" src="data:image/png;base64,{{ graficos.filtros_cnn }}" alt="Filtros da CNN antes e depois do treinamento" />
+      {% if graficos.mapas_ativacao_cnn %}
+      <img class="img-grafico" src="data:image/png;base64,{{ graficos.mapas_ativacao_cnn }}" alt="Mapas de características dos filtros em uma imagem de teste" />
+      {% endif %}
+    </section>
+    {% endif %}
+
     {% if graficos.mapa_pesos %}
     <section class="card">
-      <h2>6. Mapa de Pesos — Inicial vs Final (Seção 6)</h2>
+      <h2>{% if graficos.filtros_cnn %}7{% else %}6{% endif %}. Mapa de Pesos — Inicial vs Final (Seção 6)</h2>
       <img class="img-grafico" src="data:image/png;base64,{{ graficos.mapa_pesos }}" alt="Mapa de calor dos pesos iniciais e finais" />
     </section>
     {% endif %}
@@ -738,6 +766,7 @@
     const blocoCsv = document.getElementById("bloco-csv");
     const blocoPerceptron = document.getElementById("bloco-perceptron");
     const blocoMlp = document.getElementById("bloco-mlp");
+    const blocoCnn = document.getElementById("bloco-cnn");
     const inputCsv = document.getElementById("arquivo_csv");
     const inputEpocas = document.getElementById("epocas");
     const dicaModelo = document.getElementById("dica-modelo");
@@ -754,19 +783,17 @@
       blocoCsv.classList.toggle("oculto", b !== "csv");
       blocoPerceptron.classList.toggle("oculto", m !== "perceptron");
       blocoMlp.classList.toggle("oculto", m !== "mlp");
+      blocoCnn.classList.toggle("oculto", m !== "cnn");
 
       if (m === "perceptron") {
         dicaModelo.textContent = "Sugerido: bases tabulares ou pixels achatados; até 200 épocas.";
         dicaAtivacao.textContent = "Permitidas no Perceptron: degrau, sigmoide ou tanh.";
-        inputEpocas.max = 200;
       } else if (m === "mlp") {
         dicaModelo.textContent = "Camadas ocultas configuráveis; até 200 épocas.";
         dicaAtivacao.textContent = "Permitidas no MLP: sigmoide, tanh, ReLU ou Leaky ReLU (degrau inválida).";
-        inputEpocas.max = 200;
       } else {
         dicaModelo.textContent = "Exige base de imagens (Dígitos 8x8 ou MNIST); até 30 épocas.";
         dicaAtivacao.textContent = "Permitidas na CNN: ReLU, Leaky ReLU, sigmoide ou tanh (degrau inválida).";
-        inputEpocas.max = 30;
       }
 
       // Destaque visual quando a combinação será rejeitada pela validação (RF12)
@@ -833,7 +860,12 @@
       });
     }
 
-    selModelo.addEventListener("change", atualizarDicas);
+    selModelo.addEventListener("change", () => {
+      if (selModelo.value === "cnn" && Number(inputEpocas.value) > 30) {
+        inputEpocas.value = "15";
+      }
+      atualizarDicas();
+    });
     selBase.addEventListener("change", () => {
       atualizarDicas();
       preencherAtributos(false);
@@ -843,6 +875,11 @@
     formTreino.addEventListener("submit", () => {
       overlayTreino.classList.add("ativo");
       btnTreinar.disabled = true;
+    });
+
+    window.addEventListener("pageshow", () => {
+      overlayTreino.classList.remove("ativo");
+      btnTreinar.disabled = false;
     });
 
     atualizarDicas();

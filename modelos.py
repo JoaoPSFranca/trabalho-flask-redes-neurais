@@ -83,7 +83,7 @@ def _selecionar_epocas_tabela(total_epocas: int) -> list[int]:
 def _montar_tabelas_foco(
     historico_foco: list[dict[str, Any]],
     nomes_pesos: list[str],
-    max_colunas_tabela: int = 8,
+    max_colunas_tabela: int = 9,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Monta tabela época a época (com Δ total) e tabela completa inicial x final x Δ."""
     ep_final = len(historico_foco) - 1
@@ -672,6 +672,242 @@ class MLPPyTorch:
         )
 
 
+class CNNPyTorch:
+    """Rede Neural Convolucional (CNN) em PyTorch com visualização dos filtros antes e depois."""
+
+    def __init__(
+        self,
+        ativacao: str = "relu",
+        taxa_aprendizado: float = 0.1,
+        epocas: int = 15,
+        tamanho_lote: int = 32,
+        num_filtros: int = 8,
+        tamanho_kernel: int = 3,
+        semente: int = 42,
+    ) -> None:
+        if ativacao not in ATIVACOES_CNN:
+            _criar_ativacao_torch(ativacao, "CNN")
+            raise ErroValidacaoModelo(f"Ativação '{ativacao}' não permitida para CNN.")
+        if not (1 <= num_filtros <= 32):
+            raise ErroValidacaoModelo("O número de filtros da CNN deve estar entre 1 e 32.")
+        if tamanho_kernel < 2:
+            raise ErroValidacaoModelo("O tamanho do kernel da CNN deve ser pelo menos 2.")
+        self.ativacao = ativacao
+        self.taxa_aprendizado = taxa_aprendizado
+        self.epocas = epocas
+        self.tamanho_lote = tamanho_lote
+        self.num_filtros = num_filtros
+        self.tamanho_kernel = tamanho_kernel
+        self.semente = semente
+
+    def treinar(self, dados: ConjuntoDados) -> ResultadoTreino:
+        """Treina a CNN (Conv2D -> ativação -> MaxPool2D -> Flatten -> Dense/Softmax)."""
+        if dados.tipo != "imagem" or dados.X_treino_img is None or dados.X_teste_img is None:
+            raise ErroValidacaoModelo(
+                f"A CNN (Rede Convolucional) exige uma base de imagens (ex.: Dígitos 8x8 ou MNIST). "
+                f"A base '{dados.nome}' é tabular e não possui estrutura espacial 2D para convolução."
+            )
+
+        altura = dados.altura_img or 8
+        largura = dados.largura_img or 8
+        k = self.tamanho_kernel
+        conv_h = altura - k + 1
+        conv_w = largura - k + 1
+        pool_h = conv_h // 2
+        pool_w = conv_w // 2
+        if conv_h < 2 or conv_w < 2 or pool_h < 1 or pool_w < 1:
+            max_k = min(altura, largura) - 1
+            raise ErroValidacaoModelo(
+                f"Kernel {k}×{k} é grande demais para imagens {altura}×{largura} com MaxPool 2×2. "
+                f"Escolha um tamanho de kernel entre 2 e {max_k}."
+            )
+
+        t0 = time.perf_counter()
+        torch.manual_seed(self.semente)
+        np.random.seed(self.semente)
+
+        X_tr = torch.tensor(dados.X_treino_img, dtype=torch.float32)
+        X_te = torch.tensor(dados.X_teste_img, dtype=torch.float32)
+        y_tr_t = torch.tensor(dados.y_treino, dtype=torch.long)
+        n_classes = len(dados.nomes_classes)
+
+        conv = nn.Conv2d(1, self.num_filtros, kernel_size=k, padding=0)
+        act = _criar_ativacao_torch(self.ativacao, "CNN")
+        pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        flat_dim = self.num_filtros * pool_h * pool_w
+        densa = nn.Linear(flat_dim, n_classes)
+
+        rede = nn.Sequential(conv, act, pool, nn.Flatten(), densa)
+        criterio = nn.CrossEntropyLoss()
+        otimizador = torch.optim.SGD(rede.parameters(), lr=self.taxa_aprendizado)
+
+        nome_conv = f"Conv2D ({self.num_filtros} filtros {k}×{k})"
+        nome_densa = f"Densa Saída ({flat_dim}→{n_classes})"
+        camadas: list[tuple[str, nn.Module]] = [(nome_conv, conv), (nome_densa, densa)]
+
+        kernels_iniciais = conv.weight.detach().cpu().numpy()[:, 0, :, :].copy()
+        bias_iniciais = conv.bias.detach().cpu().numpy().copy()
+        pesos_iniciais = {
+            nome: layer.weight.detach().cpu().numpy().copy() for nome, layer in camadas
+        }
+
+        def avaliar() -> tuple[float, float, float, np.ndarray]:
+            rede.eval()
+            with torch.no_grad():
+                logits_tr = rede(X_tr)
+                perda = float(criterio(logits_tr, y_tr_t).item())
+                logits_te = rede(X_te)
+                pred_tr = torch.argmax(logits_tr, dim=1).cpu().numpy()
+                pred_te = torch.argmax(logits_te, dim=1).cpu().numpy()
+                acc_tr = float(np.mean(pred_tr == dados.y_treino))
+                acc_te = float(np.mean(pred_te == dados.y_teste))
+            return perda, acc_tr, acc_te, pred_te
+
+        perda0, acc_tr0, acc_te0, pred_te_final = avaliar()
+        epocas_eixo = [0]
+        historico_perda = [perda0]
+        historico_acc_tr = [acc_tr0]
+        historico_acc_te = [acc_te0]
+
+        historico_foco = [
+            {
+                "epoca": 0,
+                "bias": float(conv.bias[0].item()),
+                "pesos": conv.weight[0, 0].detach().cpu().numpy().flatten().copy(),
+            }
+        ]
+        normas_camadas: dict[str, list[float]] = {nome: [] for nome, _ in camadas}
+
+        dataset_tr = TensorDataset(X_tr, y_tr_t)
+        lote = min(self.tamanho_lote, len(X_tr))
+        divergiu = False
+        epoca_divergencia = None
+
+        for epoca in range(1, self.epocas + 1):
+            pesos_antes = {
+                nome: layer.weight.detach().cpu().numpy().copy() for nome, layer in camadas
+            }
+            gerador = torch.Generator().manual_seed(self.semente + epoca)
+            loader = DataLoader(dataset_tr, batch_size=lote, shuffle=True, generator=gerador)
+
+            rede.train()
+            for xb, yb in loader:
+                otimizador.zero_grad()
+                loss_b = criterio(rede(xb), yb)
+                loss_b.backward()
+                otimizador.step()
+
+            perda_ep, acc_tr_ep, acc_te_ep, pred_te_ep = avaliar()
+            if not np.isfinite(perda_ep):
+                divergiu = True
+                epoca_divergencia = epoca
+                break
+
+            pred_te_final = pred_te_ep
+            epocas_eixo.append(epoca)
+            historico_perda.append(perda_ep)
+            historico_acc_tr.append(acc_tr_ep)
+            historico_acc_te.append(acc_te_ep)
+
+            for nome, layer in camadas:
+                w_atual = layer.weight.detach().cpu().numpy().copy()
+                normas_camadas[nome].append(float(np.linalg.norm(w_atual - pesos_antes[nome])))
+
+            historico_foco.append(
+                {
+                    "epoca": epoca,
+                    "bias": float(conv.bias[0].item()),
+                    "pesos": conv.weight[0, 0].detach().cpu().numpy().flatten().copy(),
+                }
+            )
+
+        tempo = time.perf_counter() - t0
+        cm = confusion_matrix(dados.y_teste, pred_te_final, labels=list(range(n_classes)))
+
+        nomes_pesos_kernel = [f"k({r},{c})" for r in range(k) for c in range(k)]
+        tabela_epocas, tabela_inicial_final = _montar_tabelas_foco(historico_foco, nomes_pesos_kernel)
+
+        deltas_totais = {
+            nome: float(np.linalg.norm(layer.weight.detach().cpu().numpy() - pesos_iniciais[nome]))
+            for nome, layer in camadas
+        }
+        resumo_normas = _montar_resumo_normas(normas_camadas, deltas_totais)
+
+        kernels_finais = conv.weight.detach().cpu().numpy()[:, 0, :, :].copy()
+        bias_finais = conv.bias.detach().cpu().numpy().copy()
+
+        # Mapas de ativação em uma amostra real do conjunto de teste para interpretação
+        rede.eval()
+        with torch.no_grad():
+            amostra_t = X_te[:1]
+            mapas_ativ = act(conv(amostra_t)).squeeze(0).cpu().numpy()
+
+        filtros_cnn = {
+            "kernels_iniciais": kernels_iniciais,
+            "kernels_finais": kernels_finais,
+            "bias_iniciais": bias_iniciais,
+            "bias_finais": bias_finais,
+            "amostra_imagem": dados.X_teste_img[0, 0],
+            "amostra_real": dados.nomes_classes[int(dados.y_teste[0])],
+            "amostra_prevista": dados.nomes_classes[int(pred_te_final[0])],
+            "mapas_ativacao": mapas_ativ,
+        }
+
+        mapas_pesos = {
+            "titulo": f"Mapa de calor dos pesos — {nome_densa} (Inicial x Final)",
+            "W_inicial": pesos_iniciais[nome_densa],
+            "W_final": densa.weight.detach().cpu().numpy().copy(),
+            "labels_x": [],
+            "labels_y": [f"Classe {c}" for c in dados.nomes_classes],
+        }
+
+        total_params = sum(p.numel() for p in rede.parameters())
+        arq_str = (
+            f"Entrada {altura}×{largura}×1 → Conv({self.num_filtros}, {k}×{k})+{self.ativacao} "
+            f"→ MaxPool(2×2) → Flatten({flat_dim}) → Densa({n_classes}, softmax)"
+        )
+        observacoes = [
+            f"CNN com 1 camada convolucional ({self.num_filtros} filtros {k}×{k}), pooling 2×2 e saída softmax (Cross-Entropy).",
+            "A tabela e o gráfico de trajetória acompanham os pesos e o bias do Filtro 1 ao longo das épocas.",
+        ]
+        if divergiu:
+            observacoes.append(
+                f"Atenção: ocorreu instabilidade numérica na época {epoca_divergencia} (reduza a taxa de aprendizado)."
+            )
+
+        return ResultadoTreino(
+            modelo="cnn",
+            modelo_nome="CNN (PyTorch)",
+            ativacao=self.ativacao,
+            ativacao_nome=NOMES_ATIVACOES[self.ativacao],
+            arquitetura_resumo=arq_str,
+            total_parametros=int(total_params),
+            epocas_solicitadas=self.epocas,
+            epocas_executadas=len(epocas_eixo) - 1,
+            convergiu=None,
+            tempo_treino_seg=tempo,
+            acuracia_treino=historico_acc_tr[-1],
+            acuracia_teste=historico_acc_te[-1],
+            perda_final=historico_perda[-1],
+            nome_perda="Entropia Cruzada (Softmax)",
+            matriz_confusao=cm,
+            epocas_eixo=epocas_eixo,
+            historico_perda=historico_perda,
+            historico_acc_treino=historico_acc_tr,
+            historico_acc_teste=historico_acc_te,
+            unidade_foco_titulo=f"Filtro 1 (kernel {k}×{k} da camada Conv2D)",
+            nomes_pesos_foco=nomes_pesos_kernel,
+            historico_foco=historico_foco,
+            tabela_epocas_foco=tabela_epocas,
+            tabela_inicial_final=tabela_inicial_final,
+            normas_variacao_camadas=normas_camadas,
+            resumo_normas_camadas=resumo_normas,
+            mapas_pesos=mapas_pesos,
+            filtros_cnn=filtros_cnn,
+            observacoes=observacoes,
+        )
+
+
 def executar_treinamento(dados: ConjuntoDados, config: dict[str, Any]) -> ResultadoTreino:
     """Valida compatibilidade modelo/base/ativação/hiperparâmetros e executa o treino."""
     modelo = config["modelo"]
@@ -717,8 +953,19 @@ def executar_treinamento(dados: ConjuntoDados, config: dict[str, Any]) -> Result
         return mlp.treinar(dados)
 
     if modelo == "cnn":
-        raise ErroValidacaoModelo(
-            "O modelo 'CNN' será habilitado na Etapa 3."
+        if not (1 <= epocas <= 30):
+            raise ErroValidacaoModelo(
+                "Para a CNN, escolha entre 1 e 30 épocas (limite para manter o treino rápido na requisição web)."
+            )
+        cnn = CNNPyTorch(
+            ativacao=ativacao,
+            taxa_aprendizado=taxa,
+            epocas=epocas,
+            tamanho_lote=lote,
+            num_filtros=int(config.get("num_filtros", 8)),
+            tamanho_kernel=int(config.get("tamanho_kernel", 3)),
+            semente=semente,
         )
+        return cnn.treinar(dados)
 
     raise ErroValidacaoModelo(f"Modelo inválido: '{modelo}'.")
