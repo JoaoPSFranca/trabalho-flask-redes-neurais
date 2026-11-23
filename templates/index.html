@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trabalho Integrador — Redes Neurais em Flask</title>
+  <style>
+    :root {
+      --azul-ifsp: #1f3864;
+      --azul-claro: #2c5282;
+      --fundo: #f4f6f9;
+      --cartao: #ffffff;
+      --borda: #dbe2ea;
+      --texto: #1e293b;
+      --texto-suave: #64748b;
+      --verde: #166534;
+      --verde-fundo: #dcfce7;
+      --vermelho: #991b1b;
+      --vermelho-fundo: #fee2e2;
+      --amarelo-fundo: #fef9c3;
+      --amarelo-borda: #fde047;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--fundo);
+      color: var(--texto);
+      line-height: 1.5;
+    }
+
+    header {
+      background: linear-gradient(135deg, #16294a 0%, #1f3864 60%, #2b4c7e 100%);
+      color: #ffffff;
+      padding: 1.4rem 1.5rem;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16);
+    }
+
+    .container {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 1.4rem 1.25rem 3rem;
+    }
+
+    header .container {
+      padding: 0;
+    }
+
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 0.92rem;
+      color: #dbeafe;
+    }
+
+    .card {
+      background: var(--cartao);
+      border: 1px solid var(--borda);
+      border-radius: 10px;
+      padding: 1.2rem 1.35rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+
+    .card h2 {
+      margin: 0 0 0.9rem;
+      font-size: 1.12rem;
+      color: var(--azul-ifsp);
+      border-bottom: 1px solid var(--borda);
+      padding-bottom: 0.45rem;
+    }
+
+    .card h3 {
+      margin: 0 0 0.65rem;
+      font-size: 1rem;
+      color: var(--azul-ifsp);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.95rem 1.1rem;
+    }
+
+    .campo {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .campo.largo {
+      grid-column: span 2;
+    }
+
+    @media (max-width: 720px) {
+      .campo.largo {
+        grid-column: span 1;
+      }
+    }
+
+    label {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    select,
+    input[type="number"],
+    input[type="text"],
+    input[type="file"] {
+      width: 100%;
+      padding: 0.52rem 0.65rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 0.92rem;
+      background: #ffffff;
+      color: var(--texto);
+    }
+
+    select:focus,
+    input:focus {
+      outline: 2px solid rgba(31, 56, 100, 0.25);
+      border-color: var(--azul-ifsp);
+    }
+
+    .dica {
+      font-size: 0.78rem;
+      color: var(--texto-suave);
+    }
+
+    .secao-config-extra {
+      margin-top: 1rem;
+      padding: 0.9rem 1rem;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+    }
+
+    .secao-config-extra h4 {
+      margin: 0 0 0.65rem;
+      font-size: 0.92rem;
+      color: var(--azul-ifsp);
+    }
+
+    .acoes-form {
+      margin-top: 1.15rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-treinar {
+      background: var(--azul-ifsp);
+      color: #ffffff;
+      border: none;
+      border-radius: 7px;
+      padding: 0.68rem 1.45rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .btn-treinar:hover {
+      background: var(--azul-claro);
+    }
+
+    .btn-treinar:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .alerta-erro {
+      background: var(--vermelho-fundo);
+      border: 1px solid #fca5a5;
+      border-left: 5px solid #dc2626;
+      color: var(--vermelho);
+      padding: 0.95rem 1.1rem;
+      border-radius: 8px;
+      margin-bottom: 1.25rem;
+    }
+
+    .alerta-erro strong {
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+
+    .alerta-info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-left: 5px solid var(--azul-claro);
+      color: #1e3a8a;
+      padding: 0.8rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .metricas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+      gap: 0.9rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .metrica-card {
+      background: #f8fafc;
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+    }
+
+    .metrica-card .rotulo {
+      font-size: 0.8rem;
+      color: var(--texto-suave);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .metrica-card .valor {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--azul-ifsp);
+      margin-top: 0.15rem;
+    }
+
+    .metrica-card .sub {
+      font-size: 0.8rem;
+      color: var(--texto-suave);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .badge-ok {
+      background: var(--verde-fundo);
+      color: var(--verde);
+    }
+
+    .badge-aviso {
+      background: var(--amarelo-fundo);
+      color: #854d0e;
+      border: 1px solid var(--amarelo-borda);
+    }
+
+    .graficos-duplos {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 1.1rem;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      .graficos-duplos {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .img-grafico {
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      display: block;
+    }
+
+    .tabela-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+
+    .tabela-scroll {
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      padding: 0.5rem 0.7rem;
+      text-align: right;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+      font-weight: 600;
+    }
+
+    thead th {
+      background: var(--azul-ifsp);
+      color: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    tr.linha-delta td {
+      background: #e0f2fe !important;
+      font-weight: 700;
+      color: #0c4a6e;
+      border-top: 2px solid #0284c7;
+    }
+
+    .num-pos {
+      color: #166534;
+    }
+
+    .num-neg {
+      color: #991b1b;
+    }
+
+    .meta-lista {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.4rem;
+      font-size: 0.88rem;
+      color: #334155;
+      margin-bottom: 0.9rem;
+    }
+
+    .obs-lista {
+      margin: 0.5rem 0 0;
+      padding-left: 1.2rem;
+      font-size: 0.88rem;
+      color: #334155;
+    }
+
+    /* Overlay de carregamento ("treinando...") */
+    .overlay-treino {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .overlay-treino.ativo {
+      display: flex;
+    }
+
+    .caixa-treino {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1.6rem 2rem;
+      text-align: center;
+      max-width: 380px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28);
+    }
+
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border: 4px solid #cbd5e1;
+      border-top-color: var(--azul-ifsp);
+      border-radius: 50%;
+      margin: 0 auto 0.9rem;
+      animation: girar 0.8s linear infinite;
+    }
+
+    @keyframes girar {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .oculto {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Trabalho Integrador — Redes Neurais em Flask</h1>
+      <p>Aprendizado de Máquina (PEPAPRM) • Análise de Perceptron, MLP e CNN com evolução de pesos e bias</p>
+    </div>
+  </header>
+
+  <div class="overlay-treino" id="overlay-treino" role="status" aria-live="polite">
+    <div class="caixa-treino">
+      <div class="spinner"></div>
+      <strong>Treinando modelo...</strong>
+      <p style="margin: 0.4rem 0 0; font-size: 0.9rem; color: #475569;">
+        Aguarde enquanto a rede ajusta os parâmetros e gera os gráficos.
+      </p>
+    </div>
+  </div>
+
+  <main class="container">
+    {% if erro %}
+    <div class="alerta-erro" role="alert">
+      <strong>Não foi possível executar o treinamento</strong>
+      <span>{{ erro }}</span>
+    </div>
+    {% endif %}
+
+    <section class="card">
+      <h2>1. Configuração do Experimento</h2>
+      <form id="form-treino" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csv_token" value="{{ form_state.csv_token }}" />
+
+        <div class="form-grid">
+          <div class="campo">
+            <label for="modelo">Modelo de Rede Neural (RF1)</label>
+            <select id="modelo" name="modelo">
+              <option value="perceptron" {% if form_state.modelo == 'perceptron' %}selected{% endif %}>
+                Perceptron (NumPy — camada única)
+              </option>
+              <option value="mlp" {% if form_state.modelo == 'mlp' %}selected{% endif %}>
+                MLP — Perceptron Multicamadas (Etapa 2)
+              </option>
+              <option value="cnn" {% if form_state.modelo == 'cnn' %}selected{% endif %}>
+                CNN — Rede Convolucional (Etapa 3)
+              </option>
+            </select>
+            <span class="dica" id="dica-modelo"></span>
+          </div>
+
+          <div class="campo">
+            <label for="base">Base de Dados (RF2)</label>
+            <select id="base" name="base">
+              {% for chave, info in bases.items() %}
+              <option value="{{ chave }}" {% if form_state.base == chave %}selected{% endif %}>
+                {{ info.nome }}
+              </option>
+              {% endfor %}
+              <option value="csv" {% if form_state.base == 'csv' %}selected{% endif %}>
+                Base CSV exclusiva do aluno (upload)
+              </option>
+            </select>
+            <span class="dica" id="dica-base">Trocar de base não exige reiniciar o servidor.</span>
+          </div>
+
+          <div class="campo">
+            <label for="ativacao">Função de Ativação (RF3)</label>
+            <select id="ativacao" name="ativacao">
+              {% for chave, rotulo in ativacoes.items() %}
+              <option value="{{ chave }}" {% if form_state.ativacao == chave %}selected{% endif %}>
+                {{ rotulo }}
+              </option>
+              {% endfor %}
+            </select>
+            <span class="dica" id="dica-ativacao"></span>
+          </div>
+
+          <div class="campo">
+            <label for="taxa_aprendizado">Taxa de Aprendizado (η)</label>
+            <input id="taxa_aprendizado" name="taxa_aprendizado" type="number" step="any" min="0.0001" max="10" value="{{ form_state.taxa_aprendizado }}" required />
+          </div>
+
+          <div class="campo">
+            <label for="epocas">Épocas</label>
+            <input id="epocas" name="epocas" type="number" step="1" min="1" max="200" value="{{ form_state.epocas }}" required />
+            <span class="dica" id="dica-epocas">Máximo recomendado: 200 (Perceptron/MLP) ou 30 (CNN).</span>
+          </div>
+
+          <div class="campo">
+            <label for="tamanho_lote">Tamanho do Lote (batch)</label>
+            <input id="tamanho_lote" name="tamanho_lote" type="number" step="1" min="1" max="1024" value="{{ form_state.tamanho_lote }}" required />
+          </div>
+
+          <div class="campo">
+            <label for="prop_teste">Proporção de Teste (%)</label>
+            <input id="prop_teste" name="prop_teste" type="number" step="1" min="5" max="50" value="{{ form_state.prop_teste }}" required />
+          </div>
+
+          <div class="campo">
+            <label for="semente">Semente Aleatória (reprodutibilidade)</label>
+            <input id="semente" name="semente" type="number" step="1" value="{{ form_state.semente }}" required />
+          </div>
+        </div>
+
+        <div id="bloco-csv" class="secao-config-extra {% if form_state.base != 'csv' %}oculto{% endif %}">
+          <h4>Upload da Base CSV Exclusiva (última coluna = classe, atributos numéricos)</h4>
+          <div class="form-grid">
+            <div class="campo largo">
+              <label for="arquivo_csv">Arquivo .csv (aceita separador vírgula ou ponto e vírgula)</label>
+              <input id="arquivo_csv" name="arquivo_csv" type="file" accept=".csv" />
+              {% if form_state.csv_nome %}
+              <span class="dica">Em cache na sessão atual: <strong>{{ form_state.csv_nome }}</strong> (pode alterar modelo/parâmetros sem reenviar).</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div id="bloco-perceptron" class="secao-config-extra {% if form_state.modelo != 'perceptron' %}oculto{% endif %}">
+          <h4>Fronteira de Decisão 2D do Perceptron (RF10)</h4>
+          <div class="form-grid">
+            <div class="campo">
+              <label for="attr_x">Atributo no eixo X</label>
+              <select id="attr_x" name="attr_x"></select>
+            </div>
+            <div class="campo">
+              <label for="attr_y">Atributo no eixo Y</label>
+              <select id="attr_y" name="attr_y"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="acoes-form">
+          <button type="submit" id="btn-treinar" class="btn-treinar">Treinar modelo e analisar parâmetros</button>
+          <span class="dica">O pré-processamento ajusta média e desvio apenas no conjunto de treino (sem vazamento).</span>
+        </div>
+      </form>
+    </section>
+
+    {% if resultado %}
+    <section class="card">
+      <h2>2. Resumo do Treinamento e Métricas (RF7)</h2>
+      <div class="meta-lista">
+        <span><strong>Modelo:</strong> {{ resultado.modelo_nome }}</span>
+        <span><strong>Base:</strong> {{ dados.nome }} ({{ dados.total_amostras }} amostras; {{ dados.X_treino|length }} treino / {{ dados.X_teste|length }} teste)</span>
+        <span><strong>Ativação:</strong> {{ resultado.ativacao_nome }}</span>
+        <span><strong>Arquitetura:</strong> {{ resultado.arquitetura_resumo }} ({{ resultado.total_parametros }} parâmetros)</span>
+        <span><strong>Tempo:</strong> {{ "%.2f"|format(resultado.tempo_treino_seg) }} s</span>
+      </div>
+
+      <div class="alerta-info">
+        <strong>Pré-processamento (RF5):</strong> {{ dados.escala_info }}
+        {% if dados.subconjunto_info %}<br /><strong>Amostragem:</strong> {{ dados.subconjunto_info }}{% endif %}
+      </div>
+
+      <div class="metricas-grid">
+        <div class="metrica-card">
+          <div class="rotulo">Acurácia de Treino</div>
+          <div class="valor">{{ "%.1f"|format(resultado.acuracia_treino * 100) }}%</div>
+          <div class="sub">{{ dados.X_treino|length }} amostras de treino</div>
+        </div>
+        <div class="metrica-card">
+          <div class="rotulo">Acurácia de Teste</div>
+          <div class="valor">{{ "%.1f"|format(resultado.acuracia_teste * 100) }}%</div>
+          <div class="sub">{{ dados.X_teste|length }} amostras de teste</div>
+        </div>
+        <div class="metrica-card">
+          <div class="rotulo">{{ resultado.nome_perda }}</div>
+          <div class="valor">{{ "%.4f"|format(resultado.perda_final) }}</div>
+          <div class="sub">Na época {{ resultado.epocas_executadas }}</div>
+        </div>
+        <div class="metrica-card">
+          <div class="rotulo">Épocas Executadas</div>
+          <div class="valor">{{ resultado.epocas_executadas }} / {{ resultado.epocas_solicitadas }}</div>
+          <div class="sub">
+            {% if resultado.convergiu is sameas true %}
+              <span class="badge badge-ok">Convergiu (0 erros)</span>
+            {% elif resultado.convergiu is sameas false %}
+              <span class="badge badge-aviso">Não zerou erros</span>
+            {% else %}
+              Treino concluído
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if resultado.observacoes %}
+      <ul class="obs-lista">
+        {% for obs in resultado.observacoes %}
+        <li>{{ obs }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>3. Curvas de Aprendizado e Matriz de Confusão (RF7 e RF8)</h2>
+      <div class="graficos-duplos">
+        <div>
+          <img class="img-grafico" src="data:image/png;base64,{{ graficos.perda_acuracia }}" alt="Gráficos de perda e acurácia por época" />
+        </div>
+        <div>
+          <img class="img-grafico" src="data:image/png;base64,{{ graficos.matriz_confusao }}" alt="Matriz de confusão do conjunto de teste" />
+        </div>
+      </div>
+    </section>
+
+    {% if graficos.fronteira_perceptron %}
+    <section class="card">
+      <h2>4. Fronteira de Decisão do Perceptron ao Longo das Épocas (RF10)</h2>
+      <p class="dica" style="margin-top: 0; margin-bottom: 0.85rem;">
+        Evolução da reta separadora sobre os pontos padronizados de treino usando os dois atributos escolhidos.
+      </p>
+      <img class="img-grafico" src="data:image/png;base64,{{ graficos.fronteira_perceptron }}" alt="Fronteira de decisão do Perceptron em épocas selecionadas" />
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <h2>5. Ajuste de Pesos e Bias ao Longo do Treinamento (RF9 e Seção 6)</h2>
+      <h3>{{ resultado.unidade_foco_titulo }} — Épocas selecionadas e variação total (Δ)</h3>
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Época</th>
+              <th>bias</th>
+              {% for nome_w in resultado.nomes_pesos_foco[:8] %}
+              <th title="{{ nome_w }}">w{{ loop.index }} ({{ nome_w[:16] }}{% if nome_w|length > 16 %}…{% endif %})</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for linha in resultado.tabela_epocas_foco %}
+            <tr class="{% if linha.eh_delta %}linha-delta{% endif %}">
+              <td>{{ linha.epoca }}</td>
+              <td>{{ "%+.3f"|format(linha.bias) }}</td>
+              {% for val in linha.pesos %}
+              <td>{{ "%+.3f"|format(val) }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Trajetória dos parâmetros época a época</h3>
+      <img class="img-grafico" style="margin-bottom: 1.2rem;" src="data:image/png;base64,{{ graficos.evolucao_parametros }}" alt="Trajetória dos pesos e do bias ao longo das épocas" />
+
+      <h3>Comparação completa: Valores iniciais, finais e variação (Δ)</h3>
+      <div class="tabela-wrap tabela-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Parâmetro</th>
+              <th>Atributo / Ligação</th>
+              <th>Inicial (Época 0)</th>
+              <th>Final (Época {{ resultado.epocas_executadas }})</th>
+              <th>Δ (Final − Inicial)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in resultado.tabela_inicial_final %}
+            <tr>
+              <td>{{ item.parametro }}</td>
+              <td style="text-align: left;">{{ item.nome }}</td>
+              <td>{{ "%+.4f"|format(item.inicial) }}</td>
+              <td>{{ "%+.4f"|format(item.final) }}</td>
+              <td class="{% if item.delta >= 0 %}num-pos{% else %}num-neg{% endif %}">{{ "%+.4f"|format(item.delta) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Norma da variação dos pesos por camada em cada época</h3>
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Camada</th>
+              <th>||ΔW|| Época 1</th>
+              <th>||ΔW|| Última Época</th>
+              <th>||ΔW|| Média/Época</th>
+              <th>||W_final − W_inicial||₂ Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in resultado.resumo_normas_camadas %}
+            <tr>
+              <td>{{ item.camada }}</td>
+              <td>{{ "%.4f"|format(item.norma_epoca_1) }}</td>
+              <td>{{ "%.4f"|format(item.norma_ultima_epoca) }}</td>
+              <td>{{ "%.4f"|format(item.norma_media) }}</td>
+              <td><strong>{{ "%.4f"|format(item.norma_delta_total) }}</strong></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <img class="img-grafico" src="data:image/png;base64,{{ graficos.norma_camadas }}" alt="Norma da variação dos pesos por camada por época" />
+    </section>
+
+    {% if graficos.mapa_pesos %}
+    <section class="card">
+      <h2>6. Mapa de Pesos — Inicial vs Final (Seção 6)</h2>
+      <img class="img-grafico" src="data:image/png;base64,{{ graficos.mapa_pesos }}" alt="Mapa de calor dos pesos iniciais e finais" />
+    </section>
+    {% endif %}
+    {% endif %}
+  </main>
+
+  <script>
+    const ATRIBUTOS_POR_BASE = {{ atributos_json | safe }};
+    let csvAtributos = {{ csv_atributos_json | safe }};
+    const INITIAL_ATTR_X = "{{ form_state.attr_x }}";
+    const INITIAL_ATTR_Y = "{{ form_state.attr_y }}";
+
+    const selModelo = document.getElementById("modelo");
+    const selBase = document.getElementById("base");
+    const selAtiv = document.getElementById("ativacao");
+    const selAttrX = document.getElementById("attr_x");
+    const selAttrY = document.getElementById("attr_y");
+    const blocoCsv = document.getElementById("bloco-csv");
+    const blocoPerceptron = document.getElementById("bloco-perceptron");
+    const inputCsv = document.getElementById("arquivo_csv");
+    const inputEpocas = document.getElementById("epocas");
+    const dicaModelo = document.getElementById("dica-modelo");
+    const dicaAtivacao = document.getElementById("dica-ativacao");
+    const formTreino = document.getElementById("form-treino");
+    const overlayTreino = document.getElementById("overlay-treino");
+    const btnTreinar = document.getElementById("btn-treinar");
+
+    function atualizarDicas() {
+      const m = selModelo.value;
+      const b = selBase.value;
+      const a = selAtiv.value;
+
+      blocoCsv.classList.toggle("oculto", b !== "csv");
+      blocoPerceptron.classList.toggle("oculto", m !== "perceptron");
+
+      if (m === "perceptron") {
+        dicaModelo.textContent = "Sugerido: bases tabulares ou pixels achatados; até 200 épocas.";
+        dicaAtivacao.textContent = "Permitidas no Perceptron: degrau, sigmoide ou tanh.";
+        inputEpocas.max = 200;
+      } else if (m === "mlp") {
+        dicaModelo.textContent = "Camadas ocultas configuráveis; até 200 épocas.";
+        dicaAtivacao.textContent = "Permitidas no MLP: sigmoide, tanh, ReLU ou Leaky ReLU (degrau inválida).";
+        inputEpocas.max = 200;
+      } else {
+        dicaModelo.textContent = "Exige base de imagens (Dígitos 8x8 ou MNIST); até 30 épocas.";
+        dicaAtivacao.textContent = "Permitidas na CNN: ReLU, Leaky ReLU, sigmoide ou tanh (degrau inválida).";
+        inputEpocas.max = 30;
+      }
+
+      // Destaque visual quando a combinação será rejeitada pela validação (RF12)
+      const invalidas =
+        (m === "perceptron" && (a === "relu" || a === "leaky_relu")) ||
+        ((m === "mlp" || m === "cnn") && a === "degrau") ||
+        (m === "cnn" && b !== "digits" && b !== "mnist_amostra");
+      if (invalidas) {
+        dicaAtivacao.style.color = "#b91c1c";
+        dicaAtivacao.textContent += " (Combinação inválida será explicada ao enviar.)";
+      } else {
+        dicaAtivacao.style.color = "#64748b";
+      }
+    }
+
+    function preencherAtributos(preservarSelecao) {
+      const base = selBase.value;
+      let attrs = ATRIBUTOS_POR_BASE[base] || csvAtributos || [];
+      if (base === "csv" && (!attrs || attrs.length < 2)) {
+        attrs = ["Atributo 1", "Atributo 2"];
+      }
+      const prevX = preservarSelecao ? INITIAL_ATTR_X : selAttrX.value;
+      const prevY = preservarSelecao ? INITIAL_ATTR_Y : selAttrY.value;
+
+      selAttrX.innerHTML = "";
+      selAttrY.innerHTML = "";
+
+      const limite = Math.min(attrs.length, 64);
+      for (let i = 0; i < limite; i++) {
+        const opt1 = document.createElement("option");
+        opt1.value = String(i);
+        opt1.textContent = `${i + 1}. ${attrs[i]}`;
+        selAttrX.appendChild(opt1);
+
+        const opt2 = document.createElement("option");
+        opt2.value = String(i);
+        opt2.textContent = `${i + 1}. ${attrs[i]}`;
+        selAttrY.appendChild(opt2);
+      }
+
+      selAttrX.value = Number(prevX) < limite ? prevX : "0";
+      if (Number(prevY) < limite && prevY !== selAttrX.value) {
+        selAttrY.value = prevY;
+      } else {
+        selAttrY.value = limite > 1 ? (selAttrX.value === "0" ? "1" : "0") : "0";
+      }
+    }
+
+    if (inputCsv) {
+      inputCsv.addEventListener("change", (ev) => {
+        const file = ev.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const primeiraLinha = String(reader.result || "").split(/\r?\n/)[0] || "";
+          const sep = (primeiraLinha.split(";").length > primeiraLinha.split(",").length) ? ";" : ",";
+          const cols = primeiraLinha.split(sep).map((c) => c.trim()).filter(Boolean);
+          if (cols.length >= 3) {
+            csvAtributos = cols.slice(0, -1);
+            preencherAtributos(false);
+          }
+        };
+        reader.readAsText(file.slice(0, 8192));
+      });
+    }
+
+    selModelo.addEventListener("change", atualizarDicas);
+    selBase.addEventListener("change", () => {
+      atualizarDicas();
+      preencherAtributos(false);
+    });
+    selAtiv.addEventListener("change", atualizarDicas);
+
+    formTreino.addEventListener("submit", () => {
+      overlayTreino.classList.add("ativo");
+      btnTreinar.disabled = true;
+    });
+
+    atualizarDicas();
+    preencherAtributos(true);
+  </script>
+</body>
+</html>
