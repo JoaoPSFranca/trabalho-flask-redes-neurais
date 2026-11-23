@@ -440,7 +440,7 @@
                 Perceptron (NumPy — camada única)
               </option>
               <option value="mlp" {% if form_state.modelo == 'mlp' %}selected{% endif %}>
-                MLP — Perceptron Multicamadas (Etapa 2)
+                MLP — Perceptron Multicamadas (PyTorch)
               </option>
               <option value="cnn" {% if form_state.modelo == 'cnn' %}selected{% endif %}>
                 CNN — Rede Convolucional (Etapa 3)
@@ -526,6 +526,21 @@
             <div class="campo">
               <label for="attr_y">Atributo no eixo Y</label>
               <select id="attr_y" name="attr_y"></select>
+            </div>
+          </div>
+        </div>
+
+        <div id="bloco-mlp" class="secao-config-extra {% if form_state.modelo != 'mlp' %}oculto{% endif %}">
+          <h4>Arquitetura do MLP (RF4)</h4>
+          <div class="form-grid">
+            <div class="campo">
+              <label for="n_camadas_ocultas">Número de camadas ocultas (1 a 5)</label>
+              <input id="n_camadas_ocultas" name="n_camadas_ocultas" type="number" step="1" min="1" max="5" value="{{ form_state.n_camadas_ocultas }}" />
+            </div>
+            <div class="campo">
+              <label for="neuronios_ocultos">Neurônios por camada oculta</label>
+              <input id="neuronios_ocultos" name="neuronios_ocultos" type="text" value="{{ form_state.neuronios_ocultos }}" placeholder="Ex.: 16 ou 16, 8" />
+              <span class="dica">Informe 1 número (igual para todas) ou valores separados por vírgula (ex.: 16, 8).</span>
             </div>
           </div>
         </div>
@@ -722,6 +737,7 @@
     const selAttrY = document.getElementById("attr_y");
     const blocoCsv = document.getElementById("bloco-csv");
     const blocoPerceptron = document.getElementById("bloco-perceptron");
+    const blocoMlp = document.getElementById("bloco-mlp");
     const inputCsv = document.getElementById("arquivo_csv");
     const inputEpocas = document.getElementById("epocas");
     const dicaModelo = document.getElementById("dica-modelo");
@@ -737,6 +753,7 @@
 
       blocoCsv.classList.toggle("oculto", b !== "csv");
       blocoPerceptron.classList.toggle("oculto", m !== "perceptron");
+      blocoMlp.classList.toggle("oculto", m !== "mlp");
 
       if (m === "perceptron") {
         dicaModelo.textContent = "Sugerido: bases tabulares ou pixels achatados; até 200 épocas.";

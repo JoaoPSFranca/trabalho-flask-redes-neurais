@@ -275,6 +275,9 @@ def grafico_mapa_pesos(mapas_pesos: dict[str, Any] | None) -> str | None:
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13.0, max(3.6, min(6.0, 2.2 + 0.35 * W_ini.shape[0]))))
 
+    labels_x = mapas_pesos.get("labels_x") or []
+    labels_y = mapas_pesos.get("labels_y") or []
+
     for ax, mat, titulo, vlim, cmap in (
         (ax1, W_ini, "Inicial (Época 0)", lim, "RdBu_r"),
         (ax2, W_fim, "Final", lim, "RdBu_r"),
@@ -282,9 +285,17 @@ def grafico_mapa_pesos(mapas_pesos: dict[str, Any] | None) -> str | None:
     ):
         im = ax.imshow(mat, aspect="auto", cmap=cmap, vmin=-vlim, vmax=vlim)
         ax.set_title(titulo, fontsize=10.5, fontweight="bold", color="#1F3864")
-        ax.set_xlabel("Entradas / Atributos")
+        if 0 < len(labels_x) <= 10 and len(labels_x) == mat.shape[1]:
+            ax.set_xticks(range(len(labels_x)))
+            ax.set_xticklabels([l[:12] + "…" if len(l) > 12 else l for l in labels_x], rotation=30, ha="right", fontsize=8)
+        else:
+            ax.set_xlabel("Entradas / Atributos")
         if ax is ax1:
-            ax.set_ylabel("Neurônios")
+            if 0 < len(labels_y) <= 12 and len(labels_y) == mat.shape[0]:
+                ax.set_yticks(range(len(labels_y)))
+                ax.set_yticklabels(labels_y, fontsize=8)
+            else:
+                ax.set_ylabel("Neurônios")
         if mat.shape[0] <= 10 and mat.shape[1] <= 10:
             for r in range(mat.shape[0]):
                 for c in range(mat.shape[1]):

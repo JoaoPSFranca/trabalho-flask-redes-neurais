@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+import torch
 from sklearn.metrics import confusion_matrix
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
 
 from dados import ConjuntoDados, ErroValidacaoDados
 
@@ -417,6 +420,258 @@ class PerceptronNumPy:
         )
 
 
+def _criar_ativacao_torch(nome: str, modelo_nome: str) -> nn.Module:
+    """Cria a camada de ativação PyTorch validando compatibilidade com treino por gradiente."""
+    if nome == "degrau":
+        raise ErroValidacaoModelo(
+            f"A função 'degrau' não pode ser usada no {modelo_nome}: sua derivada é nula "
+            "(f'(z) = 0 para z ≠ 0), o que impede o aprendizado por gradiente/retropropagação."
+        )
+    mapa = {
+        "sigmoide": nn.Sigmoid,
+        "tanh": nn.Tanh,
+        "relu": nn.ReLU,
+        "leaky_relu": lambda: nn.LeakyReLU(negative_slope=0.01),
+    }
+    if nome not in mapa:
+        raise ErroValidacaoModelo(f"Função de ativação desconhecida: '{nome}'.")
+    return mapa[nome]()
+
+
+def _parse_neuronios_mlp(n_camadas: int, spec_neuronios: str) -> list[int]:
+    """Interpreta a configuração de neurônios das camadas ocultas (ex.: '16' ou '16, 8')."""
+    if not (1 <= n_camadas <= 5):
+        raise ErroValidacaoModelo("O número de camadas ocultas do MLP deve estar entre 1 e 5.")
+
+    partes = [p.strip() for p in str(spec_neuronios).split(",") if p.strip()]
+    if not partes:
+        raise ErroValidacaoModelo("Informe o número de neurônios por camada oculta do MLP.")
+
+    try:
+        valores = [int(p) for p in partes]
+    except ValueError as exc:
+        raise ErroValidacaoModelo(
+            "Neurônios por camada devem ser números inteiros (ex.: '16' ou '16, 8')."
+        ) from exc
+
+    if any(v < 1 or v > 256 for v in valores):
+        raise ErroValidacaoModelo("Cada camada oculta do MLP deve ter entre 1 e 256 neurônios.")
+
+    if len(valores) == 1:
+        return valores * n_camadas
+    if len(valores) == n_camadas:
+        return valores
+    raise ErroValidacaoModelo(
+        f"Você definiu {n_camadas} camadas ocultas, mas informou {len(valores)} valores ({partes}). "
+        f"Informe apenas 1 valor (repetido em todas) ou exatamente {n_camadas} valores separados por vírgula."
+    )
+
+
+class MLPPyTorch:
+    """Perceptron Multicamadas (MLP) em PyTorch com histórico completo de parâmetros por época."""
+
+    def __init__(
+        self,
+        ativacao: str = "relu",
+        taxa_aprendizado: float = 0.1,
+        epocas: int = 50,
+        tamanho_lote: int = 16,
+        n_camadas_ocultas: int = 2,
+        neuronios_ocultos: str = "16, 8",
+        semente: int = 42,
+    ) -> None:
+        if ativacao not in ATIVACOES_MLP:
+            _criar_ativacao_torch(ativacao, "MLP")
+            raise ErroValidacaoModelo(f"Ativação '{ativacao}' não permitida para MLP.")
+        self.ativacao = ativacao
+        self.taxa_aprendizado = taxa_aprendizado
+        self.epocas = epocas
+        self.tamanho_lote = tamanho_lote
+        self.arquitetura_oculta = _parse_neuronios_mlp(n_camadas_ocultas, neuronios_ocultos)
+        self.semente = semente
+
+    def treinar(self, dados: ConjuntoDados) -> ResultadoTreino:
+        """Treina o MLP com SGD, registrando pesos/bias da época 0 até a época final."""
+        t0 = time.perf_counter()
+        torch.manual_seed(self.semente)
+        np.random.seed(self.semente)
+
+        X_tr = torch.tensor(dados.X_treino, dtype=torch.float32)
+        X_te = torch.tensor(dados.X_teste, dtype=torch.float32)
+        n_classes = len(dados.nomes_classes)
+        n_attrs = dados.X_treino.shape[1]
+        binario = n_classes == 2
+
+        if binario:
+            y_tr_t = torch.tensor(dados.y_treino.reshape(-1, 1), dtype=torch.float32)
+            criterio = nn.BCEWithLogitsLoss()
+            n_saidas = 1
+        else:
+            y_tr_t = torch.tensor(dados.y_treino, dtype=torch.long)
+            criterio = nn.CrossEntropyLoss()
+            n_saidas = n_classes
+
+        camadas_seq: list[nn.Module] = []
+        camadas_lineares: list[tuple[str, nn.Linear]] = []
+        dim_atual = n_attrs
+        for idx, h in enumerate(self.arquitetura_oculta, start=1):
+            lin = nn.Linear(dim_atual, h)
+            camadas_lineares.append((f"Oculta {idx} ({dim_atual}→{h})", lin))
+            camadas_seq.append(lin)
+            camadas_seq.append(_criar_ativacao_torch(self.ativacao, "MLP"))
+            dim_atual = h
+
+        camada_saida = nn.Linear(dim_atual, n_saidas)
+        camadas_lineares.append((f"Saída ({dim_atual}→{n_saidas})", camada_saida))
+        camadas_seq.append(camada_saida)
+
+        rede = nn.Sequential(*camadas_seq)
+        otimizador = torch.optim.SGD(rede.parameters(), lr=self.taxa_aprendizado)
+
+        pesos_iniciais = {
+            nome: layer.weight.detach().cpu().numpy().copy() for nome, layer in camadas_lineares
+        }
+
+        def avaliar() -> tuple[float, float, float, np.ndarray]:
+            rede.eval()
+            with torch.no_grad():
+                logits_tr = rede(X_tr)
+                perda = float(criterio(logits_tr, y_tr_t).item())
+                logits_te = rede(X_te)
+                if binario:
+                    pred_tr = (torch.sigmoid(logits_tr).squeeze(1) >= 0.5).cpu().numpy().astype(int)
+                    pred_te = (torch.sigmoid(logits_te).squeeze(1) >= 0.5).cpu().numpy().astype(int)
+                else:
+                    pred_tr = torch.argmax(logits_tr, dim=1).cpu().numpy()
+                    pred_te = torch.argmax(logits_te, dim=1).cpu().numpy()
+                acc_tr = float(np.mean(pred_tr == dados.y_treino))
+                acc_te = float(np.mean(pred_te == dados.y_teste))
+            return perda, acc_tr, acc_te, pred_te
+
+        perda0, acc_tr0, acc_te0, pred_te_final = avaliar()
+        epocas_eixo = [0]
+        historico_perda = [perda0]
+        historico_acc_tr = [acc_tr0]
+        historico_acc_te = [acc_te0]
+
+        primeira_camada = camadas_lineares[0][1]
+        historico_foco = [
+            {
+                "epoca": 0,
+                "bias": float(primeira_camada.bias[0].item()),
+                "pesos": primeira_camada.weight[0].detach().cpu().numpy().copy(),
+            }
+        ]
+        normas_camadas: dict[str, list[float]] = {nome: [] for nome, _ in camadas_lineares}
+
+        dataset_tr = TensorDataset(X_tr, y_tr_t)
+        lote = min(self.tamanho_lote, len(X_tr))
+        divergiu = False
+        epoca_divergencia = None
+
+        for epoca in range(1, self.epocas + 1):
+            pesos_antes = {
+                nome: layer.weight.detach().cpu().numpy().copy() for nome, layer in camadas_lineares
+            }
+            gerador = torch.Generator().manual_seed(self.semente + epoca)
+            loader = DataLoader(dataset_tr, batch_size=lote, shuffle=True, generator=gerador)
+
+            rede.train()
+            for xb, yb in loader:
+                otimizador.zero_grad()
+                saida_b = rede(xb)
+                loss_b = criterio(saida_b, yb)
+                loss_b.backward()
+                otimizador.step()
+
+            perda_ep, acc_tr_ep, acc_te_ep, pred_te_ep = avaliar()
+            if not np.isfinite(perda_ep):
+                divergiu = True
+                epoca_divergencia = epoca
+                break
+
+            pred_te_final = pred_te_ep
+            epocas_eixo.append(epoca)
+            historico_perda.append(perda_ep)
+            historico_acc_tr.append(acc_tr_ep)
+            historico_acc_te.append(acc_te_ep)
+
+            for nome, layer in camadas_lineares:
+                w_atual = layer.weight.detach().cpu().numpy().copy()
+                normas_camadas[nome].append(float(np.linalg.norm(w_atual - pesos_antes[nome])))
+
+            historico_foco.append(
+                {
+                    "epoca": epoca,
+                    "bias": float(primeira_camada.bias[0].item()),
+                    "pesos": primeira_camada.weight[0].detach().cpu().numpy().copy(),
+                }
+            )
+
+        tempo = time.perf_counter() - t0
+        cm = confusion_matrix(dados.y_teste, pred_te_final, labels=list(range(n_classes)))
+        tabela_epocas, tabela_inicial_final = _montar_tabelas_foco(historico_foco, dados.nomes_atributos)
+
+        deltas_totais = {
+            nome: float(np.linalg.norm(layer.weight.detach().cpu().numpy() - pesos_iniciais[nome]))
+            for nome, layer in camadas_lineares
+        }
+        resumo_normas = _montar_resumo_normas(normas_camadas, deltas_totais)
+
+        nome_oculta1, layer_oculta1 = camadas_lineares[0]
+        mapas_pesos = {
+            "titulo": f"Mapa de calor dos pesos — {nome_oculta1} (Inicial x Final)",
+            "W_inicial": pesos_iniciais[nome_oculta1],
+            "W_final": layer_oculta1.weight.detach().cpu().numpy().copy(),
+            "labels_x": dados.nomes_atributos,
+            "labels_y": [f"Oculto {i + 1}" for i in range(layer_oculta1.out_features)],
+        }
+
+        total_params = sum(p.numel() for p in rede.parameters())
+        arq_str = " → ".join([str(n_attrs)] + [str(h) for h in self.arquitetura_oculta] + [str(n_saidas)])
+        saida_desc = "1 neurônio (sigmoide)" if binario else f"{n_saidas} neurônios (softmax)"
+
+        observacoes = [
+            f"MLP treinado com SGD (η={self.taxa_aprendizado}) e saída de {saida_desc}.",
+            f"O gráfico de ajuste acompanha o Neurônio 1 da 1ª camada oculta ({self.arquitetura_oculta[0]} neurônios).",
+        ]
+        if divergiu:
+            observacoes.append(
+                f"Atenção: ocorreu instabilidade numérica na época {epoca_divergencia} (taxa de aprendizado muito elevada)."
+            )
+
+        return ResultadoTreino(
+            modelo="mlp",
+            modelo_nome="MLP (PyTorch)",
+            ativacao=self.ativacao,
+            ativacao_nome=NOMES_ATIVACOES[self.ativacao],
+            arquitetura_resumo=f"Rede {arq_str}",
+            total_parametros=int(total_params),
+            epocas_solicitadas=self.epocas,
+            epocas_executadas=len(epocas_eixo) - 1,
+            convergiu=None,
+            tempo_treino_seg=tempo,
+            acuracia_treino=historico_acc_tr[-1],
+            acuracia_teste=historico_acc_te[-1],
+            perda_final=historico_perda[-1],
+            nome_perda="Entropia Cruzada" + (" Binária" if binario else ""),
+            matriz_confusao=cm,
+            epocas_eixo=epocas_eixo,
+            historico_perda=historico_perda,
+            historico_acc_treino=historico_acc_tr,
+            historico_acc_teste=historico_acc_te,
+            unidade_foco_titulo="Neurônio 1 (1ª camada oculta)",
+            nomes_pesos_foco=dados.nomes_atributos,
+            historico_foco=historico_foco,
+            tabela_epocas_foco=tabela_epocas,
+            tabela_inicial_final=tabela_inicial_final,
+            normas_variacao_camadas=normas_camadas,
+            resumo_normas_camadas=resumo_normas,
+            mapas_pesos=mapas_pesos,
+            observacoes=observacoes,
+        )
+
+
 def executar_treinamento(dados: ConjuntoDados, config: dict[str, Any]) -> ResultadoTreino:
     """Valida compatibilidade modelo/base/ativação/hiperparâmetros e executa o treino."""
     modelo = config["modelo"]
@@ -447,9 +702,23 @@ def executar_treinamento(dados: ConjuntoDados, config: dict[str, Any]) -> Result
             attr_y_idx=int(config.get("attr_y", 1)),
         )
 
-    if modelo in ("mlp", "cnn"):
+    if modelo == "mlp":
+        if not (1 <= epocas <= 200):
+            raise ErroValidacaoModelo("Para o MLP, escolha entre 1 e 200 épocas.")
+        mlp = MLPPyTorch(
+            ativacao=ativacao,
+            taxa_aprendizado=taxa,
+            epocas=epocas,
+            tamanho_lote=lote,
+            n_camadas_ocultas=int(config.get("n_camadas_ocultas", 2)),
+            neuronios_ocultos=str(config.get("neuronios_ocultos", "16, 8")),
+            semente=semente,
+        )
+        return mlp.treinar(dados)
+
+    if modelo == "cnn":
         raise ErroValidacaoModelo(
-            f"O modelo '{modelo.upper()}' será habilitado nas próximas etapas."
+            "O modelo 'CNN' será habilitado na Etapa 3."
         )
 
     raise ErroValidacaoModelo(f"Modelo inválido: '{modelo}'.")
