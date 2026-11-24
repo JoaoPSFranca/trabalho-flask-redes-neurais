@@ -1,0 +1,26 @@
+# Byte-compiled / Python caches
+__pycache__/
+*.py[codz]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Flask & local dataset cache (e.g., MNIST subset)
+instance/
+.webassets-cache
+
+# Test & coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors & OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
